@@ -2,7 +2,7 @@
 
 static uint64_t xpf_find_arm_vm_init(void)
 {
-	PFStringMetric *contiguousHintMetric = pfmetric_string_init("use_contiguous_hint");
+	PFStringMetric *contiguousHintMetric = pfmetric_string_init("__PRELINK_DATA");
 	__block uint64_t contiguousHintAddr = 0;
 	pfmetric_run(gXPF.kernelStringSection, contiguousHintMetric, ^(uint64_t vmaddr, bool *stop) {
 		contiguousHintAddr = vmaddr;
@@ -1264,6 +1264,72 @@ static uint64_t xpf_find_iorvbar(void)
 	return iorvbar;
 }
 
+static uint64_t xpf_find_kernproc(void) {
+    PFSection *textSection = gXPF.kernelTextSection;
+    __block uint64_t stringAddr = 0;
+    PFStringMetric *stringMetric = pfmetric_string_init("p != kernproc");
+    pfmetric_run(gXPF.kernelStringSection, stringMetric, ^(uint64_t vmaddr, bool *stop) {
+        stringAddr = vmaddr;
+        *stop = true;
+    });
+    pfmetric_free(stringMetric);
+    XPF_ASSERT(stringAddr);
+    PFXrefMetric *xrefMetric = pfmetric_xref_init(stringAddr, XREF_TYPE_MASK_REFERENCE);
+    __block uint64_t xrefAddr = 0;
+    pfmetric_run(textSection, xrefMetric, ^(uint64_t vmaddr, bool *stop){
+        xrefAddr = vmaddr;
+        *stop = true;
+    });
+    pfmetric_free(xrefMetric);
+    XPF_ASSERT(xrefAddr);
+    PFXrefMetric *beqXrefMetric = pfmetric_xref_init(xrefAddr - 0x4, XREF_TYPE_MASK_JUMP);
+    __block uint64_t beqAddr = 0;
+    pfmetric_run(textSection, beqXrefMetric, ^(uint64_t vmaddr, bool *stop){
+        beqAddr = vmaddr;
+        *stop = true;
+    });
+    pfmetric_free(beqXrefMetric);
+    XPF_ASSERT(beqAddr);
+    uint64_t page = 0, pageoff = 0;
+    arm64_dec_adr_p(pfsec_read32(textSection, beqAddr - 0xC), beqAddr - 0xC, &page, NULL, NULL);
+    arm64_dec_ldr_imm(pfsec_read32(textSection, beqAddr - 0x8), NULL, NULL, &pageoff, NULL, NULL);
+    return page + pageoff;
+}
+
+static uint64_t xpf_find_pe_state(void) {
+    PFSection *textSection = gXPF.kernelTextSection;
+    __block uint64_t stringAddr = 0;
+    PFStringMetric *stringMetric = pfmetric_string_init("BBBBBBBBGGGGGGGGRRRRRRRR");
+    pfmetric_run(gXPF.kernelStringSection, stringMetric, ^(uint64_t vmaddr, bool *stop) {
+        stringAddr = vmaddr;
+        *stop = true;
+    });
+    pfmetric_free(stringMetric);
+    XPF_ASSERT(stringAddr);
+    PFXrefMetric *xrefMetric = pfmetric_xref_init(stringAddr, XREF_TYPE_MASK_REFERENCE);
+    __block uint64_t xrefAddr = 0;
+    pfmetric_run(textSection, xrefMetric, ^(uint64_t vmaddr, bool *stop){
+        xrefAddr = vmaddr;
+        *stop = true;
+    });
+    pfmetric_free(xrefMetric);
+    XPF_ASSERT(xrefAddr);
+    arm64_register reg;
+    arm64_dec_add_imm(pfsec_read32(textSection, xrefAddr - 8), NULL, &reg, NULL);
+    uint64_t offset = 0;
+    while (true) {
+        arm64_register adrpReg;
+        uint64_t page = 0;
+        uint16_t pageoff = 0;
+        if (arm64_dec_adr_p(pfsec_read32(textSection, xrefAddr + offset), xrefAddr + offset, &page, &adrpReg, NULL) == 0 && ARM64_REG_GET_NUM(adrpReg) == ARM64_REG_GET_NUM(reg)) {
+            arm64_dec_add_imm(pfsec_read32(textSection, xrefAddr + offset + 0x4), NULL, NULL, &pageoff);
+            return page + pageoff;
+        }
+        offset -= 0x4;
+    }
+    return 0;
+}
+
 void xpf_common_init(void)
 {
 	xpf_item_register("kernelSymbol.start_first_cpu", xpf_find_start_first_cpu, NULL);
@@ -1325,4 +1391,7 @@ void xpf_common_init(void)
 	xpf_item_register("kernelStruct.thread.machine_contextData", xpf_find_thread_machine_contextData, NULL);
 
 	xpf_item_register("kernelSymbol.iorvbar", xpf_find_iorvbar, NULL);
+    
+    xpf_item_register("kernelSymbol.kernproc", xpf_find_kernproc, NULL);
+    xpf_item_register("kernelSymbol.pe_state", xpf_find_pe_state, NULL);
 }

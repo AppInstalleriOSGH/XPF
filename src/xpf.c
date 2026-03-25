@@ -70,6 +70,8 @@ XPFSet gBaseSet = {
 		"kernelSymbol.allproc",
 		"kernelSymbol.kalloc_data_external",
 		"kernelSymbol.kfree_data_external",
+        "kernelSymbol.kernproc",
+        "kernelSymbol.pe_state",
 		NULL
 	}
 };

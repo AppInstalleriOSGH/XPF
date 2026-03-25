@@ -22,7 +22,7 @@ output/macos/libxpf.dylib: $(wildcard src/*.c) $(CHOMA_DEP)
 
 output/ios/libxpf.dylib: $(wildcard src/*.c) $(CHOMA_DEP)
 	@mkdir -p $(shell dirname $@)
-	$(CC) $(CFLAGS_IOS) $(LDFLAGS) -dynamiclib -install_name @loader_path/libxpf.dylib -o $@ $^
+	$(CC) $(CFLAGS_IOS) $(LDFLAGS) -dynamiclib -install_name @executable_path/Frameworks/libxpf.dylib -o $@ $^
 	ldid -S $@
 
 output/macos/xpf_test: $(wildcard src/cli/*.c)
