@@ -1330,6 +1330,46 @@ static uint64_t xpf_find_pe_state(void) {
     return 0;
 }
 
+static uint64_t xpf_find_rootvnode(void) {
+    PFSection *textSection = gXPF.kernelTextSection;
+    __block uint64_t stringAddr = 0;
+    PFStringMetric *stringMetric = pfmetric_string_init("(3) Unexpected pre-decrement value (%d) of usecount for rootvnode %p @%s:%d");
+    pfmetric_run(gXPF.kernelStringSection, stringMetric, ^(uint64_t vmaddr, bool *stop) {
+        stringAddr = vmaddr;
+        *stop = true;
+    });
+    pfmetric_free(stringMetric);
+    XPF_ASSERT(stringAddr);
+    PFXrefMetric *xrefMetric = pfmetric_xref_init(stringAddr, XREF_TYPE_MASK_REFERENCE);
+    __block uint64_t xrefAddr = 0;
+    pfmetric_run(textSection, xrefMetric, ^(uint64_t vmaddr, bool *stop){
+        xrefAddr = vmaddr;
+        *stop = true;
+    });
+    pfmetric_free(xrefMetric);
+    XPF_ASSERT(xrefAddr);
+    PFXrefMetric *b_ltXrefMetric = pfmetric_xref_init(xrefAddr - 24, XREF_TYPE_MASK_JUMP);
+    __block uint64_t b_ltXrefAddr = 0;
+    pfmetric_run(textSection, b_ltXrefMetric, ^(uint64_t vmaddr, bool *stop){
+        b_ltXrefAddr = vmaddr;
+        *stop = true;
+    });
+    pfmetric_free(b_ltXrefMetric);
+    XPF_ASSERT(b_ltXrefAddr);
+    PFXrefMetric *b_eqXrefMetric = pfmetric_xref_init(b_ltXrefAddr - 16, XREF_TYPE_MASK_JUMP);
+    __block uint64_t b_eqXrefAddr = 0;
+    pfmetric_run(textSection, b_eqXrefMetric, ^(uint64_t vmaddr, bool *stop){
+        b_eqXrefAddr = vmaddr;
+        *stop = true;
+    });
+    pfmetric_free(b_eqXrefMetric);
+    XPF_ASSERT(b_eqXrefAddr);
+    uint64_t page = 0, pageoff = 0;
+    arm64_dec_adr_p(pfsec_read32(textSection, b_eqXrefAddr - 12), b_eqXrefAddr - 12, &page, NULL, NULL);
+    arm64_dec_ldr_imm(pfsec_read32(textSection, b_eqXrefAddr - 8), NULL, NULL, &pageoff, NULL, NULL);
+    return page + pageoff;
+}
+
 void xpf_common_init(void)
 {
 	xpf_item_register("kernelSymbol.start_first_cpu", xpf_find_start_first_cpu, NULL);
@@ -1394,4 +1434,5 @@ void xpf_common_init(void)
     
     xpf_item_register("kernelSymbol.kernproc", xpf_find_kernproc, NULL);
     xpf_item_register("kernelSymbol.pe_state", xpf_find_pe_state, NULL);
+    xpf_item_register("kernelSymbol.rootvnode", xpf_find_rootvnode, NULL);
 }
